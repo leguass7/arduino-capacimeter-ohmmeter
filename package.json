@@ -1,7 +1,16 @@
 {
   "name": "arduino-capacimeter-ohmmeter",
+  "description": "Implementation of ohmmeter and capacimeter using Arduino, NextJs, React, Socket.io",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "author": "Leandro Sbrissa <leandro.sbrissa@hotmail.com>",
+  "keywords": [
+    "react",
+    "nextjs",
+    "express",
+    "socket.io",
+    "arduino"
+  ],
   "scripts": {
     "dev": "nodemon src/server/index.js",
     "build": "next build",
