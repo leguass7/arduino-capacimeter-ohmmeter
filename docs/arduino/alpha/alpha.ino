@@ -1,82 +1,124 @@
 #include <ArduinoJson.h>
 #include <Gaussian.h>
 #include <GaussianAverage.h>
+#include <Thread.h>
+#include <ThreadController.h>
 
-#define SENSOR A0
+#define InOhmmeter A0
 #define OutOhmmeter 7
 #define baseR 2180.0F
 #define vDigitalOut 4.97F
 
-float voltageInput = 0.0;
-float R1 = 0.0;
-unsigned long sartTime;
-
+// tx JSON protocol
 StaticJsonDocument<128> doc;
 
+// moving averages
 GaussianAverage movingAverageOhmmeter(5);
 GaussianAverage movingVoltageInput(2);
 
+// threads
+Thread thrSender;
+Thread thrOhmmeter;
+Thread thrReceiver;
+ThreadController cpu;
+
+// global variables
+float voltageOhmmeter = 0.0;
+int ohmmeterAverage = 0;
+float R1 = 0.0;
+String command = "";
+
+unsigned long sartTime;
+
+// global functions
 float ohmmeter();
 int averageAnalogInput();
+void sendSerialData();
+void calculateOhmmeterAverage();
+void receiveSerial();
+
 
 void setup() {
   Serial.begin(9600);
   Serial.setTimeout(50);
-  pinMode(SENSOR, INPUT);
-  
+  pinMode(InOhmmeter, INPUT);
+
   pinMode(OutOhmmeter, OUTPUT);
   digitalWrite(OutOhmmeter, HIGH);
-  
+
   pinMode(LED_BUILTIN, OUTPUT);
+
+  thrSender.setInterval(1000);
+  thrSender.onRun(sendSerialData);
+
+  thrOhmmeter.setInterval(500);
+  thrOhmmeter.onRun(calculateOhmmeterAverage);
+
+  thrReceiver.setInterval(0);
+  thrReceiver.onRun(receiveSerial);
+
+  cpu.add(&thrSender);
+  cpu.add(&thrOhmmeter);
+  cpu.add(&thrReceiver);
 }
 
 void loop() {
-  long voltage = averageAnalogInput(); 
-  String command = "";
-  
-  voltageInput = (voltage * vDigitalOut) / 1023.0;
-  doc["voltage"] = voltageInput;
-  doc["A0"] = voltage;
 
-  if (Serial.available() > 0) {
-    command = Serial.readStringUntil('\n');
-  }
-  
-  
   doc["r1"] = ohmmeter();
-  
-  
-  String test = "";
-  serializeJson(doc, test);
-  Serial.println(test);
-  Serial.println(doc.memoryUsage());
-  delay(250);
-  digitalWrite(LED_BUILTIN, HIGH);
-  delay(250);
-  digitalWrite(LED_BUILTIN, LOW);
+
+  // sendSerialData();
+  cpu.run();
 }
 
-int averageAnalogInput() {
-   unsigned char i;
-   // int volt_store = 0;
-   for (i = 0; i < 10; i++) {
-    movingVoltageInput += analogRead(SENSOR);
-    // volt_store += analogRead(SENSOR);
-    delay(20);
-   }          
-   movingVoltageInput.process();    
-   return movingVoltageInput.mean;
-   //return (volt_store / 10.0);                     
+/**
+ * Envia dados para porta serial
+ */
+void sendSerialData(){
+  String test = "";
+
+  doc["voltage"] = voltageOhmmeter;
+  doc["A0"] = ohmmeterAverage;
+  doc["cmd"] = command;
+  doc["usage"] = doc.memoryUsage();
+
+  serializeJson(doc, test);
+  Serial.println(test);
+  // Serial.println();
+  digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+};
+
+/**
+ * @function calculateOhmmeterAverage
+ * - Calcula media movel da entrada analogica
+ * - Calcula tensao
+ * - Atribui valores
+ */
+void calculateOhmmeterAverage(){
+  movingVoltageInput += analogRead(InOhmmeter);
+  movingVoltageInput.process();
+  ohmmeterAverage = movingVoltageInput.mean;
+  voltageOhmmeter = (ohmmeterAverage * vDigitalOut) / 1023.0;
+};
+
+/**
+ * @function receiveSerial
+ * Recebe comando da porta serial
+ */
+void receiveSerial(){
+  if (Serial.available() > 0) {
+    command = Serial.readString();
+    // Serial.println(cmd);
+  }
 };
 
 float ohmmeter(){
   // movingAverageOhmmeter
   //movingAverageResistor.process();
-  if(voltageInput <= 0){
+  if(voltageOhmmeter <= 0){
     R1 = 0;
   } else {
-    R1 = ((baseR * 5) / voltageInput) - baseR;  
+    R1 = ((baseR * 5) / voltageOhmmeter) - baseR;
   }
-  
+
   return R1;
 }
